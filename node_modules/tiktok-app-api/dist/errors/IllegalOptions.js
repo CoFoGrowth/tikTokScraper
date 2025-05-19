@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.IllegalOptions = void 0;
+class IllegalOptions extends Error {
+    constructor(message) {
+        super(message);
+        Object.setPrototypeOf(this, IllegalOptions.prototype);
+    }
+}
+exports.IllegalOptions = IllegalOptions;

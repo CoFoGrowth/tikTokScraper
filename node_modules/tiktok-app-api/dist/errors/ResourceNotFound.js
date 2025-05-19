@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ResourceNotFound = void 0;
+class ResourceNotFound extends Error {
+    constructor(message) {
+        super(message);
+        Object.setPrototypeOf(this, ResourceNotFound.prototype);
+    }
+}
+exports.ResourceNotFound = ResourceNotFound;

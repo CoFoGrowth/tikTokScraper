@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.IllegalIdentifier = void 0;
+class IllegalIdentifier extends Error {
+    constructor(message) {
+        super(message);
+        Object.setPrototypeOf(this, IllegalIdentifier.prototype);
+    }
+}
+exports.IllegalIdentifier = IllegalIdentifier;
