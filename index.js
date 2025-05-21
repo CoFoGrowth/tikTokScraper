@@ -3,6 +3,7 @@ const fs = require("fs");
 const Airtable = require("airtable");
 const https = require("https");
 const path = require("path");
+const tableUtils = require("./create-table-fields");
 try {
   require("dotenv").config();
 } catch (error) {
@@ -16,8 +17,9 @@ const client = new ApifyClient({
 
 // Konfiguracja Airtable
 const AIRTABLE_API_KEY =
+  process.env.AIRTABLE_API_KEY ||
   "patuIzeLWvjgGXGWf.5f11369f405a4930cbc312dab319e7d5f1b40376011289ebde30ed2b43c320c8";
-const AIRTABLE_BASE_ID = "appIVjreDvDlqC305";
+const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID || "appIVjreDvDlqC305";
 const AIRTABLE_TABLE_NAME = "HashtagsData";
 const AIRTABLE_HASHTAG_SERIES_TABLE = "hashtagSeries";
 
@@ -230,19 +232,15 @@ async function saveToAirtable(items) {
       `Zapisuję ${seriesItems.length} filmików dla serii "${seriesName}" do Airtable...`
     );
 
-    // Normalizujemy nazwę serii (usuwamy białe znaki na początku i końcu, zamieniamy na małe litery)
-    const normalizedSeriesName = seriesName.trim().toLowerCase();
+    // Formatujemy nazwę tabeli na podstawie nazwy serii
+    const formattedTableName = tableUtils.formatTableName(seriesName);
 
-    // Określamy nazwę tabeli na podstawie nazwy serii
-    let tableName = "";
-    if (normalizedSeriesName.includes("automatyzacjabiznesu")) {
-      tableName = "AutomatyzacjaBiznesu";
-    } else if (normalizedSeriesName.includes("hipnozaforclient0001")) {
-      tableName = "HipnozaForClient0001";
-    } else {
-      // Jeśli nie znaleziono dopasowania, używamy domyślnej tabeli
-      tableName = "AutomatyzacjaBiznesu";
-    }
+    // Sprawdzamy czy tabela istnieje, a jeśli nie - tworzymy ją
+    console.log(`Sprawdzanie/tworzenie tabeli: ${formattedTableName}`);
+    const tableExists = await tableUtils.createTable(formattedTableName);
+
+    // Jeśli tabela nie istnieje, używamy tabeli domyślnej
+    let tableName = tableExists ? formattedTableName : "AutomatyzacjaBiznesu";
 
     console.log(`Używam tabeli: ${tableName}`);
 
@@ -294,6 +292,16 @@ async function saveToAirtable(items) {
       console.log(
         `Dane dla serii "${seriesName}" zostały pomyślnie zapisane w tabeli ${tableName}`
       );
+
+      // Jeśli użyliśmy tabeli domyślnej, wyświetl informację
+      if (!tableExists) {
+        console.log(
+          `UWAGA: Dane zostały zapisane w tabeli domyślnej "${tableName}", ponieważ tabela "${formattedTableName}" nie istnieje.`
+        );
+        console.log(
+          `Uruchom 'node create-table-fields.js', aby utworzyć brakujące tabele.`
+        );
+      }
     } catch (error) {
       console.error(`Błąd podczas zapisywania do tabeli ${tableName}:`, error);
 
@@ -310,7 +318,7 @@ async function saveToAirtable(items) {
             `Dane dla serii "${seriesName}" zostały pomyślnie zapisane w tabeli AutomatyzacjaBiznesu (fallback)`
           );
           console.log(
-            `UWAGA: Aby zapisywać dane w tabeli ${tableName}, uruchom skrypt create-table-fields.js i postępuj zgodnie z instrukcjami.`
+            `UWAGA: Uruchom 'node create-table-fields.js', aby utworzyć tabelę ${formattedTableName}.`
           );
         } catch (fallbackError) {
           console.error(
@@ -475,6 +483,34 @@ async function getHashtagSeriesFromAirtable(seriesName) {
       console.log(
         "Nie podano nazwy serii. Zostanie użyta pierwsza dostępna seria lub wartości domyślne."
       );
+    }
+
+    // Sprawdzamy/tworzymy tabele dla wszystkich serii w bazie Airtable
+    console.log("Sprawdzanie i przygotowywanie tabel dla wszystkich serii...");
+    const allSeries = await tableUtils.getAllSeries();
+    console.log(`Znaleziono ${allSeries.length} serii.`);
+
+    // Tworzenie tabel dla wszystkich serii
+    if (allSeries.length > 0) {
+      console.log(
+        "Uwaga: API Airtable może nie pozwalać na automatyczne tworzenie tabel."
+      );
+      console.log(
+        "Jeśli zobaczysz błąd 403, będziesz musiał utworzyć tabele ręcznie przez interfejs web."
+      );
+
+      for (const serie of allSeries) {
+        if (serie.name) {
+          try {
+            console.log(`Sprawdzanie tabeli dla serii: ${serie.name}`);
+            await tableUtils.createTable(serie.tableName);
+          } catch (error) {
+            console.log(
+              `Błąd podczas sprawdzania tabeli ${serie.tableName}. Tabela będzie utworzona ręcznie.`
+            );
+          }
+        }
+      }
     }
 
     // Pobierz konfigurację hashtagów z Airtable

@@ -1,42 +1,267 @@
 const Airtable = require("airtable");
+const fs = require("fs");
+const path = require("path");
+const axios = require("axios");
+try {
+  require("dotenv").config();
+} catch (error) {
+  console.log("Plik .env nie został znaleziony");
+}
 
 // Konfiguracja Airtable
 const AIRTABLE_API_KEY =
+  process.env.AIRTABLE_API_KEY ||
   "patuIzeLWvjgGXGWf.5f11369f405a4930cbc312dab319e7d5f1b40376011289ebde30ed2b43c320c8";
-const AIRTABLE_BASE_ID = "appIVjreDvDlqC305";
+const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID || "appIVjreDvDlqC305";
+const AIRTABLE_HASHTAG_SERIES_TABLE = "hashtagSeries";
 
 const airtableBase = new Airtable({
   apiKey: AIRTABLE_API_KEY,
 }).base(AIRTABLE_BASE_ID);
 
-// Funkcja do pobierania pól z tabeli
+// Funkcja do rzeczywistego tworzenia tabeli za pomocą REST API Airtable
+async function createTableViaRestApi(
+  tableName,
+  sourceTable = "AutomatyzacjaBiznesu"
+) {
+  try {
+    console.log(`Próbuję utworzyć tabelę ${tableName} za pomocą REST API...`);
+
+    // Upewnij się, że nazwa tabeli jest odpowiednio sformatowana
+    const formattedTableName = formatTableName(tableName);
+
+    // Pobierz strukturę tabeli źródłowej
+    const sourceFields = await getTableFields(sourceTable);
+
+    if (sourceFields.length === 0) {
+      throw new Error(`Brak pól w tabeli źródłowej ${sourceTable}.`);
+    }
+
+    // Utwórz strukturę pól dla nowej tabeli
+    const fields = sourceFields.map((fieldName) => {
+      // Określanie typu pola na podstawie nazwy
+      let type = "singleLineText"; // domyślny typ
+      let fieldDef = { name: fieldName, type: type };
+
+      if (fieldName === "viewsCount") {
+        fieldDef.type = "number";
+        fieldDef.options = {
+          precision: 0, // liczba całkowita
+        };
+      } else if (fieldName === "description" || fieldName === "subtitles") {
+        fieldDef.type = "multilineText";
+      } else if (fieldName === "url") {
+        fieldDef.type = "url";
+      } else if (fieldName === "createdAt") {
+        fieldDef.type = "date";
+        fieldDef.options = {
+          dateFormat: {
+            name: "iso",
+          },
+        };
+      }
+
+      // Zwracamy obiekt definicji pola z odpowiednimi opcjami
+      return fieldDef;
+    });
+
+    // Przygotuj dane do żądania
+    const data = {
+      name: formattedTableName,
+      fields: fields,
+    };
+
+    // Wywołaj REST API Airtable
+    console.log(
+      `Wysyłam żądanie do API Airtable do endpointu: https://api.airtable.com/v0/meta/bases/${AIRTABLE_BASE_ID}/tables`
+    );
+    console.log("Dane żądania:", JSON.stringify(data, null, 2));
+
+    const response = await axios({
+      method: "post",
+      url: `https://api.airtable.com/v0/meta/bases/${AIRTABLE_BASE_ID}/tables`,
+      headers: {
+        Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      data: data,
+    });
+
+    console.log("Odpowiedź API:", response.status, response.statusText);
+
+    if (response.status === 200 || response.status === 201) {
+      console.log(`Tabela ${formattedTableName} została pomyślnie utworzona!`);
+      console.log(
+        "Szczegóły odpowiedzi:",
+        JSON.stringify(response.data, null, 2)
+      );
+      return true;
+    } else {
+      console.error(
+        `Otrzymano nieprawidłowy kod odpowiedzi: ${response.status}`
+      );
+      console.error(
+        "Treść odpowiedzi:",
+        JSON.stringify(response.data, null, 2)
+      );
+      return false;
+    }
+  } catch (error) {
+    console.error(
+      `Błąd podczas tworzenia tabeli przez REST API:`,
+      error.response ? error.response.data : error.message
+    );
+    return false;
+  }
+}
+
+// Funkcja do tworzenia tabeli (wykorzystuje REST API Airtable)
+async function createTable(tableName, sourceTable = "AutomatyzacjaBiznesu") {
+  try {
+    console.log(`Pobieranie struktury tabeli źródłowej (${sourceTable})...`);
+    const sourceFields = await getTableFields(sourceTable);
+
+    if (sourceFields.length === 0) {
+      throw new Error(`Brak pól w tabeli źródłowej ${sourceTable}.`);
+    }
+
+    // Upewnij się, że nazwa tabeli jest odpowiednio sformatowana
+    const formattedTableName = formatTableName(tableName);
+
+    console.log(`Tworzenie nowej tabeli: ${formattedTableName}...`);
+
+    // Sprawdzamy czy tabela już istnieje
+    try {
+      await airtableBase(formattedTableName)
+        .select({
+          maxRecords: 1,
+        })
+        .all();
+      console.log(`Tabela ${formattedTableName} już istnieje.`);
+      return true; // Tabela istnieje
+    } catch (error) {
+      // Jeśli tabela nie istnieje, próbujemy ją utworzyć za pomocą REST API
+      console.log(
+        `Tabela ${formattedTableName} nie istnieje. Próbuję ją utworzyć...`
+      );
+
+      // Próbujemy utworzyć tabelę za pomocą REST API
+      const success = await createTableViaRestApi(
+        formattedTableName,
+        sourceTable
+      );
+
+      if (success) {
+        return true;
+      } else {
+        // Jeśli nie udało się utworzyć tabeli, generujemy instrukcje
+        console.log(
+          `Nie udało się utworzyć tabeli automatycznie. Generuję instrukcje...`
+        );
+
+        // Wyświetlamy instrukcje dla użytkownika
+        console.log("\n===== INSTRUKCJA UTWORZENIA NOWEJ TABELI =====");
+        console.log(
+          `1. Zaloguj się do Airtable i otwórz bazę: ${AIRTABLE_BASE_ID}`
+        );
+        console.log(`2. Utwórz nową tabelę o nazwie: ${formattedTableName}`);
+        console.log("3. Dodaj następujące pola (kolumny) do nowej tabeli:");
+
+        // Sugerowane typy pól
+        const fieldTypes = {
+          author: "Tekst jednowierszowy",
+          viewsCount: "Liczba",
+          otherHashtags: "Tekst jednowierszowy",
+          description: "Długi tekst",
+          url: "URL",
+          createdAt: "Data",
+          subtitles: "Długi tekst",
+        };
+
+        sourceFields.forEach((field) => {
+          console.log(
+            `   - ${field} (typ: ${fieldTypes[field] || "Tekst jednowierszowy"})`
+          );
+        });
+
+        console.log("\nPo utworzeniu tabeli, uruchom skrypt ponownie.");
+        console.log("=======================================\n");
+
+        // Zapisz instrukcje do pliku dla późniejszego użycia
+        const instructionsFile = path.join(
+          __dirname,
+          `create_table_${formattedTableName}.txt`
+        );
+        const instructions = `
+===== INSTRUKCJA UTWORZENIA NOWEJ TABELI =====
+1. Zaloguj się do Airtable i otwórz bazę: ${AIRTABLE_BASE_ID}
+2. Utwórz nową tabelę o nazwie: ${formattedTableName}
+3. Dodaj następujące pola (kolumny) do nowej tabeli:
+${sourceFields.map((field) => `   - ${field} (typ: ${fieldTypes[field] || "Tekst jednowierszowy"})`).join("\n")}
+
+Po utworzeniu tabeli, uruchom skrypt ponownie.
+=======================================
+        `;
+
+        fs.writeFileSync(instructionsFile, instructions);
+        console.log(`Zapisano instrukcje do pliku: ${instructionsFile}`);
+
+        return false; // Tabela nie istnieje i nie mogliśmy jej utworzyć
+      }
+    }
+  } catch (error) {
+    console.error(`Błąd podczas tworzenia tabeli ${tableName}:`, error);
+    return false;
+  }
+}
+
+// Formatowanie nazwy tabeli (usunięcie niedozwolonych znaków, spacji, etc.)
+function formatTableName(tableName) {
+  // Usuń znaki specjalne i spacje, pozostaw litery i cyfry
+  let formatted = tableName.replace(/[^a-zA-Z0-9]/g, "");
+
+  // Upewnij się, że pierwsza litera jest wielka (konwencja Airtable)
+  if (formatted.length > 0) {
+    formatted = formatted.charAt(0).toUpperCase() + formatted.slice(1);
+  }
+
+  return formatted;
+}
+
+// Funkcja do pobierania pól tabeli
 async function getTableFields(tableName) {
   try {
-    console.log(`Pobieranie struktury tabeli ${tableName}...`);
-
     const records = await airtableBase(tableName)
       .select({
         maxRecords: 1,
-        view: "Grid view",
       })
       .all();
 
     if (records.length === 0) {
-      console.log(`Brak rekordów w tabeli ${tableName}.`);
       return [];
     }
 
     const fields = records[0].fields;
-    const fieldNames = Object.keys(fields);
-    console.log(`Znaleziono ${fieldNames.length} pól w tabeli ${tableName}:`);
-    console.log(fieldNames);
-
-    return fieldNames;
+    return Object.keys(fields);
   } catch (error) {
-    console.error(
-      `Błąd podczas pobierania struktury tabeli ${tableName}:`,
-      error
-    );
+    console.error(`Błąd podczas pobierania pól tabeli ${tableName}:`, error);
+    return [];
+  }
+}
+
+// Funkcja do pobierania wszystkich serii z tabeli hashtagSeries
+async function getAllSeries() {
+  try {
+    const records = await airtableBase(AIRTABLE_HASHTAG_SERIES_TABLE)
+      .select()
+      .all();
+    return records.map((record) => ({
+      id: record.id,
+      name: record.fields.seriesName || "",
+      tableName: formatTableName(record.fields.seriesName || ""),
+    }));
+  } catch (error) {
+    console.error("Błąd podczas pobierania serii z Airtable:", error);
     return [];
   }
 }
@@ -44,77 +269,57 @@ async function getTableFields(tableName) {
 // Funkcja główna
 async function main() {
   try {
-    console.log("======== INSTRUKCJA TWORZENIA PÓL W TABELI ========");
+    console.log("Sprawdzanie i tworzenie tabel dla wszystkich serii...");
+
+    // Pobierz wszystkie serie
+    const series = await getAllSeries();
     console.log(
-      "Aby skrypt działał poprawnie, musisz utworzyć te same pola w tabeli HipnozaForClient0001, co w tabeli AutomatyzacjaBiznesu."
+      `Znaleziono ${series.length} serii w tabeli ${AIRTABLE_HASHTAG_SERIES_TABLE}.`
     );
 
-    const sourceTable = "AutomatyzacjaBiznesu";
-    const targetTable = "HipnozaForClient0001";
-
-    console.log(`\nPobieram pola z tabeli źródłowej (${sourceTable})...`);
-    const sourceFields = await getTableFields(sourceTable);
-
-    if (sourceFields.length === 0) {
-      console.log(
-        "Nie udało się pobrać pól z tabeli źródłowej. Sprawdź uprawnienia i nazwę tabeli."
-      );
+    if (series.length === 0) {
+      console.log("Brak serii do przetworzenia.");
       return;
     }
 
-    console.log(`\nPobieram pola z tabeli docelowej (${targetTable})...`);
-    const targetFields = await getTableFields(targetTable);
+    // Przetwórz każdą serię
+    for (const serie of series) {
+      if (!serie.name) {
+        console.log(`Seria bez nazwy, pomijam...`);
+        continue;
+      }
 
-    // Znajdź pola, które brakuje w tabeli docelowej
-    const missingFields = sourceFields.filter(
-      (field) => !targetFields.includes(field)
-    );
-
-    if (missingFields.length === 0) {
       console.log(
-        `\nWszystkie potrzebne pola już istnieją w tabeli ${targetTable}!`
+        `\nPrzetwarzanie serii: ${serie.name} (tabela: ${serie.tableName})`
       );
-    } else {
-      console.log(`\nW tabeli ${targetTable} brakuje następujących pól:`);
-      missingFields.forEach((field, index) => {
-        console.log(`${index + 1}. ${field}`);
-      });
+      const tableExists = await createTable(serie.tableName);
 
-      console.log("\n======== INSTRUKCJA RĘCZNEGO TWORZENIA PÓL ========");
-      console.log("1. Zaloguj się do Airtable i otwórz bazę danych.");
-      console.log(`2. Przejdź do tabeli ${targetTable}.`);
-      console.log("3. Kliknij na '+ Dodaj pole' w prawym górnym rogu tabeli.");
-      console.log("4. Utwórz pola o następujących nazwach i typach:");
-
-      // Sugerowane typy pól na podstawie ich nazw
-      const fieldTypes = {
-        author: "Tekst jednowierszowy",
-        viewsCount: "Liczba",
-        otherHashtags: "Tekst jednowierszowy",
-        description: "Długi tekst",
-        url: "URL",
-        createdAt: "Data",
-        subtitles: "Długi tekst",
-      };
-
-      missingFields.forEach((field, index) => {
+      if (tableExists) {
         console.log(
-          `   ${index + 1}. ${field} - Typ: ${fieldTypes[field] || "Tekst jednowierszowy"}`
+          `Tabela ${serie.tableName} istnieje i jest gotowa do użycia.`
         );
-      });
-
-      console.log(
-        "\n5. Po utworzeniu wszystkich pól, uruchom skrypt ponownie, aby upewnić się, że wszystkie pola zostały utworzone."
-      );
-      console.log("\n======== ALTERNATYWNE ROZWIĄZANIE ========");
-      console.log(
-        "Możesz też tymczasowo używać tylko tabeli AutomatyzacjaBiznesu, modyfikując funkcję saveToAirtable w pliku index.js."
-      );
+      } else {
+        console.log(
+          `Tabela ${serie.tableName} nie istnieje. Postępuj zgodnie z instrukcjami utworzenia.`
+        );
+      }
     }
+
+    console.log("\nZakończono sprawdzanie i tworzenie tabel.");
   } catch (error) {
     console.error("Wystąpił błąd:", error);
   }
 }
 
 // Uruchomienie skryptu
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  createTable,
+  formatTableName,
+  getTableFields,
+  getAllSeries,
+  createTableViaRestApi,
+};
