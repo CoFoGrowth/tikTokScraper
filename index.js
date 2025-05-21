@@ -19,6 +19,7 @@ const AIRTABLE_API_KEY =
   "patuIzeLWvjgGXGWf.5f11369f405a4930cbc312dab319e7d5f1b40376011289ebde30ed2b43c320c8";
 const AIRTABLE_BASE_ID = "appIVjreDvDlqC305";
 const AIRTABLE_TABLE_NAME = "HashtagsData";
+const AIRTABLE_HASHTAG_SERIES_TABLE = "hashtagSeries";
 
 const airtableBase = new Airtable({
   apiKey: AIRTABLE_API_KEY,
@@ -105,6 +106,20 @@ function formatPlainText(text) {
   return formattedText.trim();
 }
 
+// Funkcja do usuwania plików z podanego folderu
+function cleanupFolder(folderPath) {
+  if (fs.existsSync(folderPath)) {
+    console.log(`Czyszczenie folderu ${folderPath}...`);
+    const files = fs.readdirSync(folderPath);
+
+    for (const file of files) {
+      const filePath = path.join(folderPath, file);
+      fs.unlinkSync(filePath);
+      console.log(`Usunięto plik: ${filePath}`);
+    }
+  }
+}
+
 // Funkcja do pobierania napisów z filmu TikTok
 async function downloadSubtitles(videoItem) {
   // Sprawdzenie czy film ma napisy
@@ -168,14 +183,14 @@ async function downloadSubtitles(videoItem) {
         });
     });
 
-    // Zapisz napisy do pliku SRT
+    // Zapisz napisy do pliku SRT (tymczasowo)
     const filename = `${videoItem.id}_${language}.srt`;
     const filePath = path.join(subtitlesDir, filename);
     fs.writeFileSync(filePath, subtitleContent);
 
     console.log(`Zapisano polskie napisy do pliku ${filename}`);
 
-    // Konwertuj na zwykły tekst i zapisz
+    // Konwertuj na zwykły tekst i zapisz (tymczasowo)
     const plainText = convertSubtitlesToText(subtitleContent);
     const textFilename = `${videoItem.id}_${language}.txt`;
     const textFilePath = path.join(textDir, textFilename);
@@ -199,48 +214,112 @@ async function downloadSubtitles(videoItem) {
 
 // Funkcja do zapisywania danych w Airtable
 async function saveToAirtable(items) {
-  console.log(`Zapisuję ${items.length} filmików do Airtable...`);
+  // Grupujemy dane według serii
+  const itemsBySeries = items.reduce((acc, item) => {
+    const seriesName = item.seriesName || "default";
+    if (!acc[seriesName]) {
+      acc[seriesName] = [];
+    }
+    acc[seriesName].push(item);
+    return acc;
+  }, {});
 
-  const records = items.map((item) => {
-    // Przygotowanie danych zgodnie ze strukturą tabeli Airtable
-    const fields = {
-      author: item.authorMeta?.name || "Nieznany",
-      viewsCount: item.playCount || 0,
-      otherHashtags: item.foundHashtags
-        ? item.foundHashtags.map((h) => "#" + h).join(", ")
-        : "",
-      description: item.text || "",
-      url: item.webVideoUrl || "",
-      createdAt: new Date().toISOString().split("T")[0],
-    };
+  // Zapisujemy dane do odpowiednich tabel na podstawie nazwy serii
+  for (const [seriesName, seriesItems] of Object.entries(itemsBySeries)) {
+    console.log(
+      `Zapisuję ${seriesItems.length} filmików dla serii "${seriesName}" do Airtable...`
+    );
 
-    // Dodaj sformatowane napisy do pola subtitles, jeśli istnieją
-    if (
-      item.subtitles &&
-      item.subtitles["pol-PL"] &&
-      item.subtitles["pol-PL"].textContent
-    ) {
-      fields.subtitles = item.subtitles["pol-PL"].textContent;
+    // Normalizujemy nazwę serii (usuwamy białe znaki na początku i końcu, zamieniamy na małe litery)
+    const normalizedSeriesName = seriesName.trim().toLowerCase();
+
+    // Określamy nazwę tabeli na podstawie nazwy serii
+    let tableName = "";
+    if (normalizedSeriesName.includes("automatyzacjabiznesu")) {
+      tableName = "AutomatyzacjaBiznesu";
+    } else if (normalizedSeriesName.includes("hipnozaforclient0001")) {
+      tableName = "HipnozaForClient0001";
+    } else {
+      // Jeśli nie znaleziono dopasowania, używamy domyślnej tabeli
+      tableName = "AutomatyzacjaBiznesu";
     }
 
-    return {
-      fields,
-    };
-  });
+    console.log(`Używam tabeli: ${tableName}`);
 
-  // Dzielimy rekordy na grupy po 10, bo Airtable ma limit na liczbę rekordów w jednym żądaniu
-  const chunks = [];
-  for (let i = 0; i < records.length; i += 10) {
-    chunks.push(records.slice(i, i + 10));
-  }
+    const records = seriesItems.map((item) => {
+      // Przygotowanie danych zgodnie ze strukturą tabeli Airtable
+      const fields = {
+        author: item.authorMeta?.name || "Nieznany",
+        viewsCount: item.playCount || 0,
+        otherHashtags: item.foundHashtags
+          ? item.foundHashtags.map((h) => "#" + h).join(", ")
+          : "",
+        description: item.text || "",
+        url: item.webVideoUrl || "",
+        createdAt: new Date().toISOString().split("T")[0],
+      };
 
-  try {
-    for (const chunk of chunks) {
-      await airtableBase(AIRTABLE_TABLE_NAME).create(chunk);
+      // Dodaj sformatowane napisy do pola subtitles, jeśli istnieją
+      if (
+        item.subtitles &&
+        item.subtitles["pol-PL"] &&
+        item.subtitles["pol-PL"].textContent
+      ) {
+        fields.subtitles = item.subtitles["pol-PL"].textContent;
+      }
+
+      // Dodajemy informację o serii i głównym hashtagu do pola otherHashtags
+      if (item.seriesName || item.input) {
+        const seriesInfo = `[Seria: ${item.seriesName || "brak"}, Główny hashtag: #${item.input || "brak"}]`;
+        fields.otherHashtags = fields.otherHashtags
+          ? `${seriesInfo} ${fields.otherHashtags}`
+          : seriesInfo;
+      }
+
+      return {
+        fields,
+      };
+    });
+
+    // Dzielimy rekordy na grupy po 10, bo Airtable ma limit na liczbę rekordów w jednym żądaniu
+    const chunks = [];
+    for (let i = 0; i < records.length; i += 10) {
+      chunks.push(records.slice(i, i + 10));
     }
-    console.log("Dane zostały pomyślnie zapisane w Airtable");
-  } catch (error) {
-    console.error("Błąd podczas zapisywania do Airtable:", error);
+
+    try {
+      for (const chunk of chunks) {
+        await airtableBase(tableName).create(chunk);
+      }
+      console.log(
+        `Dane dla serii "${seriesName}" zostały pomyślnie zapisane w tabeli ${tableName}`
+      );
+    } catch (error) {
+      console.error(`Błąd podczas zapisywania do tabeli ${tableName}:`, error);
+
+      // Jeśli wystąpił błąd, spróbujmy zapisać dane w tabeli AutomatyzacjaBiznesu jako fallback
+      if (tableName !== "AutomatyzacjaBiznesu") {
+        console.log(
+          `Próbuję zapisać dane w tabeli AutomatyzacjaBiznesu jako fallback...`
+        );
+        try {
+          for (const chunk of chunks) {
+            await airtableBase("AutomatyzacjaBiznesu").create(chunk);
+          }
+          console.log(
+            `Dane dla serii "${seriesName}" zostały pomyślnie zapisane w tabeli AutomatyzacjaBiznesu (fallback)`
+          );
+          console.log(
+            `UWAGA: Aby zapisywać dane w tabeli ${tableName}, uruchom skrypt create-table-fields.js i postępuj zgodnie z instrukcjami.`
+          );
+        } catch (fallbackError) {
+          console.error(
+            `Błąd podczas zapisywania do tabeli fallback:`,
+            fallbackError
+          );
+        }
+      }
+    }
   }
 }
 
@@ -264,16 +343,156 @@ function debugHashtags(text, hashtags) {
   return hashtags.filter((tag) => lowerText.includes(`#${tag.toLowerCase()}`));
 }
 
-(async () => {
-  console.log("Rozpoczynam scrapowanie hashtagów TikTok przy użyciu Apify...");
-  try {
-    const mainHashtag = "automatyzacja";
-    const additionalHashtags = ["AI"];
+// Funkcja do pobierania danych o hashtagach z tabeli hashtagSeries w Airtable
+async function getHashtagSeriesFromAirtable(seriesName) {
+  console.log(
+    `Pobieranie konfiguracji hashtagów dla serii "${seriesName || "domyślnej"}" z Airtable...`
+  );
 
-    // Uruchomienie aktora TikTok Scraper na Apify
+  try {
+    // Pobierz wszystkie rekordy z tabeli hashtagSeries
+    const allRecords = await airtableBase(AIRTABLE_HASHTAG_SERIES_TABLE)
+      .select({
+        maxRecords: 10,
+        view: "Grid view",
+      })
+      .all();
+
+    console.log(
+      `Znaleziono ${allRecords.length} rekordów w tabeli hashtagSeries`
+    );
+
+    // Jeśli podano nazwę serii, szukaj pasującego rekordu
+    let matchingRecord = null;
+
+    if (seriesName) {
+      // Normalizujemy nazwę serii (usuwamy białe znaki na początku i końcu, zamieniamy na małe litery)
+      const normalizedSearchName = seriesName.trim().toLowerCase();
+
+      // Szukamy pasującego rekordu - najpierw dokładne dopasowanie, potem częściowe
+      for (const record of allRecords) {
+        const recordSeriesName = record.fields.seriesName || "";
+        const normalizedRecordName = recordSeriesName.trim().toLowerCase();
+
+        if (normalizedRecordName === normalizedSearchName) {
+          // Dokładne dopasowanie po normalizacji
+          matchingRecord = record;
+          console.log(
+            `Znaleziono dokładne dopasowanie dla serii "${recordSeriesName}"`
+          );
+          break;
+        } else if (
+          normalizedRecordName.includes(normalizedSearchName) ||
+          normalizedSearchName.includes(normalizedRecordName)
+        ) {
+          // Częściowe dopasowanie
+          matchingRecord = record;
+          console.log(
+            `Znaleziono częściowe dopasowanie dla serii "${recordSeriesName}"`
+          );
+          break;
+        }
+      }
+    } else if (allRecords.length > 0) {
+      // Jeśli nie podano nazwy serii, użyj pierwszego rekordu
+      matchingRecord = allRecords[0];
+      console.log(
+        `Nie podano nazwy serii. Używam pierwszego rekordu: "${matchingRecord.fields.seriesName || "bez nazwy"}"`
+      );
+    }
+
+    if (!matchingRecord) {
+      console.log(
+        `Nie znaleziono konfiguracji hashtagów dla serii "${seriesName || "domyślnej"}" w Airtable. Używam wartości domyślnych.`
+      );
+      return {
+        mainHashtag: "automatyzacja",
+        additionalHashtags: ["AI"],
+        resultsPerPage: 10,
+        seriesName: "",
+      };
+    }
+
+    const fields = matchingRecord.fields;
+
+    // Wyświetlamy informacje debugujące
+    console.log("Znaleziono rekord dla serii, zawartość pól:", fields);
+
+    // Używamy poprawnych nazw pól zgodnie z tabelą
+    const mainHashtag = fields.mainHastags || "automatyzacja";
+
+    // Pobieramy dodatkowe hashtagi z odpowiednich kolumn
+    const additionalHashtags = [];
+    if (fields.firstAddidionalHashtags)
+      additionalHashtags.push(fields.firstAddidionalHashtags);
+    if (fields.secondAdditionalHashtags)
+      additionalHashtags.push(fields.secondAdditionalHashtags);
+
+    // Pobieramy ilość filmików do pobrania
+    const resultsPerPage = fields.countVideosForMainHashtag || 10;
+
+    // Pobieramy nazwę serii (opcjonalnie)
+    const configSeriesName = fields.seriesName || "";
+
+    console.log(
+      `Pobrano konfigurację: seria "${configSeriesName}", główny hashtag #${mainHashtag}, dodatkowe hashtagi: ${additionalHashtags.map((h) => "#" + h).join(", ")}, liczba filmików: ${resultsPerPage}`
+    );
+
+    return {
+      mainHashtag,
+      additionalHashtags,
+      resultsPerPage,
+      seriesName: configSeriesName,
+    };
+  } catch (error) {
+    console.error(
+      "Błąd podczas pobierania konfiguracji hashtagów z Airtable:",
+      error
+    );
+    // Zwracamy wartości domyślne w przypadku błędu
+    return {
+      mainHashtag: "automatyzacja",
+      additionalHashtags: ["AI"],
+      resultsPerPage: 10,
+      seriesName: "",
+    };
+  }
+}
+
+// Funkcja główna
+(async () => {
+  console.log("Rozpoczynam proces pobierania danych z TikTok...");
+
+  try {
+    // Sprawdzamy, czy podano nazwę serii jako argument wiersza poleceń
+    const args = process.argv.slice(2);
+    let seriesName = "";
+
+    if (args.length > 0) {
+      seriesName = args[0];
+      console.log(`Wybrano serię: ${seriesName}`);
+    } else {
+      console.log(
+        "Nie podano nazwy serii. Zostanie użyta pierwsza dostępna seria lub wartości domyślne."
+      );
+    }
+
+    // Pobierz konfigurację hashtagów z Airtable
+    const {
+      mainHashtag,
+      additionalHashtags,
+      resultsPerPage,
+      seriesName: configSeriesName,
+    } = await getHashtagSeriesFromAirtable(seriesName);
+
+    console.log(
+      `Rozpoczynam scrapowanie hashtagów TikTok przy użyciu Apify dla hashtagu #${mainHashtag}...`
+    );
+
+    // Uruchomienie aktora TikTok Scraper na Apify z dynamicznymi parametrami
     const run = await client.actor("clockworks/tiktok-scraper").call({
       hashtags: [mainHashtag],
-      resultsPerPage: 10,
+      resultsPerPage: resultsPerPage,
       proxyConfiguration: { useApifyProxy: true },
     });
 
@@ -326,11 +545,11 @@ function debugHashtags(text, hashtags) {
         `Znaleziono ${partialMatches.length} filmików z przynajmniej jednym dodatkowym hashtagiem`
       );
 
-      // Limutujemy do 30 wyników
-      finalItems = partialMatches.slice(0, 10);
+      // Limutujemy wyniki zgodnie z konfiguracją
+      finalItems = partialMatches.slice(0, resultsPerPage);
     } else {
-      // Limutujemy do 30 wyników
-      finalItems = filteredItems.slice(0, 10).map((item) => ({
+      // Limutujemy wyniki zgodnie z konfiguracją
+      finalItems = filteredItems.slice(0, resultsPerPage).map((item) => ({
         ...item,
         foundHashtags: additionalHashtags,
       }));
@@ -345,22 +564,17 @@ function debugHashtags(text, hashtags) {
       itemsWithSubtitles.push({
         ...item,
         subtitles: subtitles,
+        input: mainHashtag,
+        searchHashtag: {
+          views: 0, // Tę wartość można pobrać z Airtable w przyszłości
+          name: mainHashtag,
+        },
+        seriesName: configSeriesName, // Dodajemy nazwę serii do każdego rekordu
       });
     }
 
-    // Zapisanie danych do pliku JSON
-    fs.writeFileSync(
-      "tiktok_common_hashtags.json",
-      JSON.stringify(finalItems, null, 2)
-    );
-    console.log("Dane zapisane do pliku tiktok_common_hashtags.json");
-
-    // Zapisanie danych z napisami do osobnego pliku JSON
-    fs.writeFileSync(
-      "tiktok_with_subtitles.json",
-      JSON.stringify(itemsWithSubtitles, null, 2)
-    );
-    console.log("Dane z napisami zapisane do pliku tiktok_with_subtitles.json");
+    // Usunięcie zapisywania danych JSON lokalnie - nie są już potrzebne
+    console.log("Pomijam zapisywanie danych lokalnie w formacie JSON");
 
     // Sprawdźmy, czy mamy napisy w itemsWithSubtitles
     console.log("\nDebugowanie przed zapisem do Airtable:");
@@ -383,29 +597,19 @@ function debugHashtags(text, hashtags) {
       );
     }
 
-    // Naprawiamy problem - używamy itemsWithSubtitles zamiast finalItems
+    // Zapisujemy dane do Airtable
     await saveToAirtable(itemsWithSubtitles);
 
-    // Wypisanie podstawowych informacji o znalezionych filmikach
-    itemsWithSubtitles.forEach((item, index) => {
-      console.log(`\nFilmik ${index + 1}:`);
-      console.log(`URL: ${item.webVideoUrl}`);
-      console.log(`Opis: ${item.text}`);
-      console.log(`Autor: ${item.authorMeta?.name}`);
-      console.log(`Liczba wyświetleń: ${item.playCount}`);
-      if (item.foundHashtags) {
-        console.log(
-          `Znalezione hashtagi: ${item.foundHashtags.map((h) => "#" + h).join(", ")}`
-        );
-      }
-      if (item.subtitles) {
-        console.log(
-          `Pobrane napisy w językach: ${Object.keys(item.subtitles).join(", ")}`
-        );
-      } else {
-        console.log("Brak napisów dla tego filmiku");
-      }
-    });
+    // Po zapisaniu do Airtable, czyścimy tymczasowe pliki
+    const subtitlesDir = path.join(__dirname, "subtitles");
+    const textDir = path.join(__dirname, "subtitles_text");
+    cleanupFolder(subtitlesDir);
+    cleanupFolder(textDir);
+    console.log("Wyczyszczono tymczasowe pliki");
+
+    console.log(
+      `\nZakończono pobieranie i zapisywanie danych dla serii "${configSeriesName}"`
+    );
   } catch (error) {
     console.error("Wystąpił błąd:", error);
   }
