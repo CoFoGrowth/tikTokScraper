@@ -467,8 +467,8 @@ async function getHashtagSeriesFromAirtable(seriesName) {
   }
 }
 
-// Funkcja główna
-(async () => {
+// Funkcja główna - wydzielona jako oddzielna funkcja, którą można wyeksportować
+async function runTikTokScraper() {
   console.log("Rozpoczynam proces pobierania danych z TikTok...");
 
   try {
@@ -651,7 +651,19 @@ async function getHashtagSeriesFromAirtable(seriesName) {
     } // koniec pętli po seriach
 
     console.log("\n=== Zakończono scraping dla wszystkich serii ===\n");
+    return { success: true, message: "Scraping zakończony pomyślnie" };
   } catch (error) {
     console.error("Wystąpił błąd:", error);
+    return { success: false, message: `Błąd: ${error.message}` };
   }
-})();
+}
+
+// Uruchom jako samodzielny skrypt, jeśli wywołano bezpośrednio
+if (require.main === module) {
+  (async () => {
+    await runTikTokScraper();
+  })();
+}
+
+// Eksportuj funkcję dla serwera Express
+module.exports = { runTikTokScraper };
