@@ -472,19 +472,6 @@ async function getHashtagSeriesFromAirtable(seriesName) {
   console.log("Rozpoczynam proces pobierania danych z TikTok...");
 
   try {
-    // Sprawdzamy, czy podano nazwę serii jako argument wiersza poleceń
-    const args = process.argv.slice(2);
-    let seriesName = "";
-
-    if (args.length > 0) {
-      seriesName = args[0];
-      console.log(`Wybrano serię: ${seriesName}`);
-    } else {
-      console.log(
-        "Nie podano nazwy serii. Zostanie użyta pierwsza dostępna seria lub wartości domyślne."
-      );
-    }
-
     // Sprawdzamy/tworzymy tabele dla wszystkich serii w bazie Airtable
     console.log("Sprawdzanie i przygotowywanie tabel dla wszystkich serii...");
     const allSeries = await tableUtils.getAllSeries();
@@ -513,139 +500,157 @@ async function getHashtagSeriesFromAirtable(seriesName) {
       }
     }
 
-    // Pobierz konfigurację hashtagów z Airtable
-    const {
-      mainHashtag,
-      additionalHashtags,
-      resultsPerPage,
-      seriesName: configSeriesName,
-    } = await getHashtagSeriesFromAirtable(seriesName);
+    // Wykonaj scraping dla każdej serii
+    console.log("\n=== Rozpoczynam scraping dla wszystkich serii ===\n");
 
-    console.log(
-      `Rozpoczynam scrapowanie hashtagów TikTok przy użyciu Apify dla hashtagu #${mainHashtag}...`
-    );
-
-    // Uruchomienie aktora TikTok Scraper na Apify z dynamicznymi parametrami
-    const run = await client.actor("clockworks/tiktok-scraper").call({
-      hashtags: [mainHashtag],
-      resultsPerPage: resultsPerPage,
-      proxyConfiguration: { useApifyProxy: true },
-    });
-
-    // Pobranie wyników
-    const { items } = await client.dataset(run.defaultDatasetId).listItems();
-    console.log(`Pobrano ${items.length} postów z hashtagiem #${mainHashtag}`);
-
-    // Debugowanie - sprawdzamy ile filmików zawiera każdy z hashtagów osobno
-    const hashtagCounts = additionalHashtags.reduce((acc, tag) => {
-      acc[tag] = items.filter((item) =>
-        (item.text || "").toLowerCase().includes(`#${tag.toLowerCase()}`)
-      ).length;
-      return acc;
-    }, {});
-    console.log("Statystyki hashtagów w pobranych filmikach:");
-    console.log(hashtagCounts);
-
-    // Filtracja wyników, aby zawierały wszystkie hashtagi
-    const filteredItems = items.filter((item) =>
-      containsAllHashtags(item.text, additionalHashtags)
-    );
-
-    console.log(
-      `Znaleziono ${filteredItems.length} filmików, które zawierają wszystkie hashtagi: #${mainHashtag}, ${additionalHashtags.map((h) => "#" + h).join(", ")}`
-    );
-
-    let finalItems = [];
-
-    // Jeśli nie znaleziono filmików z wszystkimi hashtagami, szukamy filmików z przynajmniej jednym dodatkowym hashtagiem
-    if (filteredItems.length === 0) {
-      console.log(
-        "Nie znaleziono filmików ze wszystkimi hashtagami. Szukam filmików z przynajmniej jednym dodatkowym hashtagiem..."
-      );
-
-      const partialMatches = items
-        .filter((item) => {
-          const found = debugHashtags(item.text, additionalHashtags);
-          return found.length > 0;
-        })
-        .map((item) => {
-          const foundHashtags = debugHashtags(item.text, additionalHashtags);
-          return {
-            ...item,
-            foundHashtags,
-          };
-        })
-        .sort((a, b) => b.foundHashtags.length - a.foundHashtags.length);
+    for (const serie of allSeries) {
+      if (!serie.name) {
+        console.log("Pominięto serię bez nazwy.");
+        continue;
+      }
 
       console.log(
-        `Znaleziono ${partialMatches.length} filmików z przynajmniej jednym dodatkowym hashtagiem`
+        `\n------ Rozpoczynam scraping dla serii: ${serie.name} ------\n`
       );
 
-      // Limutujemy wyniki zgodnie z konfiguracją
-      finalItems = partialMatches.slice(0, resultsPerPage);
-    } else {
-      // Limutujemy wyniki zgodnie z konfiguracją
-      finalItems = filteredItems.slice(0, resultsPerPage).map((item) => ({
-        ...item,
-        foundHashtags: additionalHashtags,
-      }));
-    }
+      // Pobierz konfigurację hashtagów z Airtable dla tej serii
+      const {
+        mainHashtag,
+        additionalHashtags,
+        resultsPerPage,
+        seriesName: configSeriesName,
+      } = await getHashtagSeriesFromAirtable(serie.name);
 
-    console.log("Pobieram napisy dla znalezionych filmików...");
+      console.log(
+        `Rozpoczynam scrapowanie hashtagów TikTok przy użyciu Apify dla hashtagu #${mainHashtag}...`
+      );
 
-    // Pobierz napisy dla każdego filmu
-    const itemsWithSubtitles = [];
-    for (const item of finalItems) {
-      const subtitles = await downloadSubtitles(item);
-      itemsWithSubtitles.push({
-        ...item,
-        subtitles: subtitles,
-        input: mainHashtag,
-        searchHashtag: {
-          views: 0, // Tę wartość można pobrać z Airtable w przyszłości
-          name: mainHashtag,
-        },
-        seriesName: configSeriesName, // Dodajemy nazwę serii do każdego rekordu
+      // Uruchomienie aktora TikTok Scraper na Apify z dynamicznymi parametrami
+      const run = await client.actor("clockworks/tiktok-scraper").call({
+        hashtags: [mainHashtag],
+        resultsPerPage: resultsPerPage,
+        proxyConfiguration: { useApifyProxy: true },
       });
-    }
 
-    // Usunięcie zapisywania danych JSON lokalnie - nie są już potrzebne
-    console.log("Pomijam zapisywanie danych lokalnie w formacie JSON");
-
-    // Sprawdźmy, czy mamy napisy w itemsWithSubtitles
-    console.log("\nDebugowanie przed zapisem do Airtable:");
-    console.log(`itemsWithSubtitles.length: ${itemsWithSubtitles.length}`);
-    const itemsWithPolishSubtitles = itemsWithSubtitles.filter(
-      (item) =>
-        item.subtitles &&
-        item.subtitles["pol-PL"] &&
-        item.subtitles["pol-PL"].textContent
-    );
-    console.log(
-      `Liczba filmików z polskimi napisami: ${itemsWithPolishSubtitles.length}`
-    );
-
-    if (itemsWithPolishSubtitles.length > 0) {
-      const sampleItem = itemsWithPolishSubtitles[0];
-      console.log(`Przykładowy fragment napisów dla ${sampleItem.id}:`);
+      // Pobranie wyników
+      const { items } = await client.dataset(run.defaultDatasetId).listItems();
       console.log(
-        sampleItem.subtitles["pol-PL"].textContent.substring(0, 100) + "..."
+        `Pobrano ${items.length} postów z hashtagiem #${mainHashtag}`
       );
-    }
 
-    // Zapisujemy dane do Airtable
-    await saveToAirtable(itemsWithSubtitles);
+      // Debugowanie - sprawdzamy ile filmików zawiera każdy z hashtagów osobno
+      const hashtagCounts = additionalHashtags.reduce((acc, tag) => {
+        acc[tag] = items.filter((item) =>
+          (item.text || "").toLowerCase().includes(`#${tag.toLowerCase()}`)
+        ).length;
+        return acc;
+      }, {});
+      console.log("Statystyki hashtagów w pobranych filmikach:");
+      console.log(hashtagCounts);
 
-    // Po zapisaniu do Airtable, czyścimy tymczasowe pliki
-    const subtitlesDir = path.join(__dirname, "subtitles");
-    const textDir = path.join(__dirname, "subtitles_text");
-    cleanupFolder(subtitlesDir);
-    cleanupFolder(textDir);
-    console.log("Wyczyszczono tymczasowe pliki");
+      // Filtracja wyników, aby zawierały wszystkie hashtagi
+      const filteredItems = items.filter((item) =>
+        containsAllHashtags(item.text, additionalHashtags)
+      );
 
-    console.log(
-      `\nZakończono pobieranie i zapisywanie danych dla serii "${configSeriesName}"`
-    );
+      console.log(
+        `Znaleziono ${filteredItems.length} filmików, które zawierają wszystkie hashtagi: #${mainHashtag}, ${additionalHashtags.map((h) => "#" + h).join(", ")}`
+      );
+
+      let finalItems = [];
+
+      // Jeśli nie znaleziono filmików z wszystkimi hashtagami, szukamy filmików z przynajmniej jednym dodatkowym hashtagiem
+      if (filteredItems.length === 0) {
+        console.log(
+          "Nie znaleziono filmików ze wszystkimi hashtagami. Szukam filmików z przynajmniej jednym dodatkowym hashtagiem..."
+        );
+
+        const partialMatches = items
+          .filter((item) => {
+            const found = debugHashtags(item.text, additionalHashtags);
+            return found.length > 0;
+          })
+          .map((item) => {
+            const foundHashtags = debugHashtags(item.text, additionalHashtags);
+            return {
+              ...item,
+              foundHashtags,
+            };
+          })
+          .sort((a, b) => b.foundHashtags.length - a.foundHashtags.length);
+
+        console.log(
+          `Znaleziono ${partialMatches.length} filmików z przynajmniej jednym dodatkowym hashtagiem`
+        );
+
+        // Limutujemy wyniki zgodnie z konfiguracją
+        finalItems = partialMatches.slice(0, resultsPerPage);
+      } else {
+        // Limutujemy wyniki zgodnie z konfiguracją
+        finalItems = filteredItems.slice(0, resultsPerPage).map((item) => ({
+          ...item,
+          foundHashtags: additionalHashtags,
+        }));
+      }
+
+      console.log("Pobieram napisy dla znalezionych filmików...");
+
+      // Pobierz napisy dla każdego filmu
+      const itemsWithSubtitles = [];
+      for (const item of finalItems) {
+        const subtitles = await downloadSubtitles(item);
+        itemsWithSubtitles.push({
+          ...item,
+          subtitles: subtitles,
+          input: mainHashtag,
+          searchHashtag: {
+            views: 0, // Tę wartość można pobrać z Airtable w przyszłości
+            name: mainHashtag,
+          },
+          seriesName: configSeriesName, // Dodajemy nazwę serii do każdego rekordu
+        });
+      }
+
+      // Usunięcie zapisywania danych JSON lokalnie - nie są już potrzebne
+      console.log("Pomijam zapisywanie danych lokalnie w formacie JSON");
+
+      // Sprawdźmy, czy mamy napisy w itemsWithSubtitles
+      console.log("\nDebugowanie przed zapisem do Airtable:");
+      console.log(`itemsWithSubtitles.length: ${itemsWithSubtitles.length}`);
+      const itemsWithPolishSubtitles = itemsWithSubtitles.filter(
+        (item) =>
+          item.subtitles &&
+          item.subtitles["pol-PL"] &&
+          item.subtitles["pol-PL"].textContent
+      );
+      console.log(
+        `Liczba filmików z polskimi napisami: ${itemsWithPolishSubtitles.length}`
+      );
+
+      if (itemsWithPolishSubtitles.length > 0) {
+        const sampleItem = itemsWithPolishSubtitles[0];
+        console.log(`Przykładowy fragment napisów dla ${sampleItem.id}:`);
+        console.log(
+          sampleItem.subtitles["pol-PL"].textContent.substring(0, 100) + "..."
+        );
+      }
+
+      // Zapisujemy dane do Airtable
+      await saveToAirtable(itemsWithSubtitles);
+
+      // Po zapisaniu do Airtable, czyścimy tymczasowe pliki
+      const subtitlesDir = path.join(__dirname, "subtitles");
+      const textDir = path.join(__dirname, "subtitles_text");
+      cleanupFolder(subtitlesDir);
+      cleanupFolder(textDir);
+      console.log("Wyczyszczono tymczasowe pliki");
+
+      console.log(
+        `\nZakończono pobieranie i zapisywanie danych dla serii "${configSeriesName}"`
+      );
+    } // koniec pętli po seriach
+
+    console.log("\n=== Zakończono scraping dla wszystkich serii ===\n");
   } catch (error) {
     console.error("Wystąpił błąd:", error);
   }
