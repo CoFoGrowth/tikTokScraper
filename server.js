@@ -1,5 +1,6 @@
 const express = require("express");
 const cron = require("node-cron");
+const path = require("path");
 const {
   runMultiPlatformScraper,
   runTikTokScraper,
@@ -13,26 +14,91 @@ const PORT = process.env.PORT || 3000;
 // Middleware do parsowania JSON
 app.use(express.json());
 
-// Strona główna
+// Serwowanie statycznych plików (frontend)
+app.use(express.static(path.join(__dirname, "public")));
+
+// Strona główna - serwuje frontend
 app.get("/", (req, res) => {
-  res.send(`
-    <h1>Multi-Platform Hashtag Scraper Server</h1>
-    <p>Serwer do scrapingu hashtagów z TikTok, Instagram i YouTube</p>
-    <h2>Dostępne endpointy:</h2>
-    <ul>
-      <li><strong>POST /run-scraper</strong> - Uruchom scraping wszystkich platform</li>
-      <li><strong>POST /run-tiktok</strong> - Uruchom scraping tylko TikTok</li>
-      <li><strong>POST /run-instagram</strong> - Uruchom scraping tylko Instagram</li>
-      <li><strong>POST /run-youtube</strong> - Uruchom scraping tylko YouTube</li>
-      <li><strong>GET /ping</strong> - Status serwera</li>
-    </ul>
-    <p>Status: <span style="color: green;">Działający</span></p>
-  `);
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 // Endpoint do monitorowania (dla serwisów uptime monitoring)
 app.get("/ping", (req, res) => {
   res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// API endpoint dla niestandardowego scrapingu z frontendu
+app.post("/api/scrape-custom", async (req, res) => {
+  try {
+    const { mainHashtag, firstHashtag, secondHashtag, platform, resultsCount } =
+      req.body;
+
+    // Walidacja danych wejściowych
+    if (!mainHashtag || !platform || !resultsCount) {
+      return res.status(400).json({
+        success: false,
+        message: "Wymagane pola: mainHashtag, platform, resultsCount",
+      });
+    }
+
+    if (resultsCount < 5 || resultsCount > 100) {
+      return res.status(400).json({
+        success: false,
+        message: "Liczba wyników musi być między 5 a 100",
+      });
+    }
+
+    console.log(`🚀 Uruchamianie niestandardowego scrapingu:`);
+    console.log(`   Główny hashtag: #${mainHashtag}`);
+    console.log(
+      `   Dodatkowe hashtagi: ${
+        [firstHashtag, secondHashtag]
+          .filter(Boolean)
+          .map((h) => "#" + h)
+          .join(", ") || "brak"
+      }`
+    );
+    console.log(`   Platforma: ${platform}`);
+    console.log(`   Liczba wyników: ${resultsCount}`);
+
+    // Import platform-manager do niestandardowego scrapingu
+    const PlatformManager = require("./platform-manager");
+    const platformManager = new PlatformManager();
+
+    // Przygotowanie niestandardowej konfiguracji
+    const customConfig = {
+      mainHashtag: mainHashtag,
+      additionalHashtags: [firstHashtag, secondHashtag].filter(Boolean),
+      resultsPerPage: resultsCount,
+      seriesName: `custom_${Date.now()}`, // Unikalna nazwa dla tymczasowej serii
+      platforms:
+        platform === "all" ? ["tiktok", "instagram", "youtube"] : [platform],
+    };
+
+    let result;
+
+    if (platform === "all") {
+      // Uruchom dla wszystkich platform
+      result =
+        await platformManager.runScrapingForAllPlatformsWithConfig(
+          customConfig
+        );
+    } else {
+      // Uruchom dla pojedynczej platformy
+      result = await platformManager.runScrapingForPlatform(
+        platform,
+        customConfig
+      );
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error("Błąd podczas niestandardowego scrapingu:", error);
+    res.status(500).json({
+      success: false,
+      message: `Błąd scrapingu: ${error.message}`,
+    });
+  }
 });
 
 // Endpoint do ręcznego uruchamiania scrapera wszystkich platform
@@ -126,13 +192,16 @@ app.listen(PORT, () => {
     `🚀 Multi-Platform Hashtag Scraper Server działa na porcie ${PORT}`
   );
   console.log("📱 Obsługiwane platformy: TikTok, Instagram, YouTube");
+  console.log("🌐 Frontend dostępny na: http://localhost:" + PORT);
   console.log(
     "⏰ Scraper zostanie uruchomiony codziennie o 10:00 czasu europejskiego"
   );
   console.log("\n🔗 Dostępne endpointy:");
-  console.log("   POST /run-scraper    - Wszystkie platformy");
-  console.log("   POST /run-tiktok     - Tylko TikTok");
-  console.log("   POST /run-instagram  - Tylko Instagram");
-  console.log("   POST /run-youtube    - Tylko YouTube");
-  console.log("   GET  /ping           - Status serwera");
+  console.log("   GET  /                 - Frontend (landing page)");
+  console.log("   POST /api/scrape-custom - Niestandardowy scraping");
+  console.log("   POST /run-scraper      - Wszystkie platformy (stara wersja)");
+  console.log("   POST /run-tiktok       - Tylko TikTok");
+  console.log("   POST /run-instagram    - Tylko Instagram");
+  console.log("   POST /run-youtube      - Tylko YouTube");
+  console.log("   GET  /ping             - Status serwera");
 });

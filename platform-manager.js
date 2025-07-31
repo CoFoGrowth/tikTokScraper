@@ -439,6 +439,84 @@ class PlatformManager {
       return { success: false, error: error.message, platform };
     }
   }
+
+  // Funkcja do scrapingu wszystkich platform z niestandardową konfiguracją (dla frontendu)
+  async runScrapingForAllPlatformsWithConfig(customConfig) {
+    console.log(
+      `🎯 Uruchamianie niestandardowego scrapingu dla platform: ${customConfig.platforms.join(", ")}`
+    );
+
+    try {
+      const tableUtils = require("./create-table-fields");
+      await tableUtils.checkAndUpdateExistingTables();
+
+      console.log("\n=== Rozpoczynam niestandardowy scraping ===\n");
+
+      const results = [];
+
+      // Uruchom scraping dla każdej wybranej platformy
+      for (const platform of customConfig.platforms) {
+        console.log(
+          `\n------ Rozpoczynam scraping dla platformy: ${platform.toUpperCase()} ------\n`
+        );
+
+        try {
+          const result = await this.runScrapingForPlatform(
+            platform,
+            customConfig
+          );
+          results.push(result);
+        } catch (error) {
+          console.error(`Błąd podczas scrapingu ${platform}:`, error);
+          results.push({
+            success: false,
+            error: error.message,
+            platform,
+            itemsCount: 0,
+          });
+        }
+      }
+
+      console.log("\n=== Zakończono niestandardowy scraping ===\n");
+
+      // Podsumowanie wyników
+      const successfulResults = results.filter((r) => r.success);
+      const failedResults = results.filter((r) => !r.success);
+
+      console.log(`\n📊 PODSUMOWANIE NIESTANDARDOWEGO SCRAPINGU:`);
+      console.log(`✅ Udanych operacji: ${successfulResults.length}`);
+      console.log(`❌ Nieudanych operacji: ${failedResults.length}`);
+
+      if (successfulResults.length > 0) {
+        console.log(
+          `📈 Łącznie pobrano: ${successfulResults.reduce((sum, r) => sum + r.itemsCount, 0)} elementów`
+        );
+      }
+
+      if (failedResults.length > 0) {
+        console.log(`\n❌ Błędy:`);
+        failedResults.forEach((r) => {
+          console.log(`  - ${r.platform}: ${r.error}`);
+        });
+      }
+
+      return {
+        success: true,
+        message: "Niestandardowy scraping zakończony",
+        results: {
+          successful: successfulResults.length,
+          failed: failedResults.length,
+          totalItems: successfulResults.reduce(
+            (sum, r) => sum + r.itemsCount,
+            0
+          ),
+        },
+      };
+    } catch (error) {
+      console.error("Wystąpił błąd podczas niestandardowego scrapingu:", error);
+      return { success: false, message: `Błąd: ${error.message}` };
+    }
+  }
 }
 
 module.exports = PlatformManager;

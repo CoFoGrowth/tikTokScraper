@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multi-Platform Hashtag Scraper</title>
+    <link rel="stylesheet" href="style.css" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="container">
+      <header class="header">
+        <h1>🎯 Multi-Platform Hashtag Scraper</h1>
+        <p>Zbieraj dane z TikTok, Instagram i YouTube w jednym miejscu</p>
+      </header>
+
+      <main class="main">
+        <form id="scraperForm" class="form">
+          <div class="form-group">
+            <label for="mainHashtag" class="label required">
+              Główny hashtag *
+            </label>
+            <input
+              type="text"
+              id="mainHashtag"
+              name="mainHashtag"
+              placeholder="np. automatyzacja"
+              required
+              class="input"
+            />
+            <small class="help-text"
+              >Główny hashtag do wyszukiwania (bez #)</small
+            >
+          </div>
+
+          <div class="form-group">
+            <label for="firstHashtag" class="label">
+              Pierwszy dodatkowy hashtag
+            </label>
+            <input
+              type="text"
+              id="firstHashtag"
+              name="firstHashtag"
+              placeholder="np. AI"
+              class="input"
+            />
+            <small class="help-text"
+              >Opcjonalny hashtag do filtrowania wyników</small
+            >
+          </div>
+
+          <div class="form-group">
+            <label for="secondHashtag" class="label">
+              Drugi dodatkowy hashtag
+            </label>
+            <input
+              type="text"
+              id="secondHashtag"
+              name="secondHashtag"
+              placeholder="np. biznes"
+              class="input"
+            />
+            <small class="help-text"
+              >Opcjonalny hashtag do filtrowania wyników</small
+            >
+          </div>
+
+          <div class="form-group">
+            <label for="platform" class="label required">
+              Platforma do przeszukania *
+            </label>
+            <select id="platform" name="platform" required class="select">
+              <option value="">Wybierz platformę</option>
+              <option value="all">🌐 Wszystkie platformy</option>
+              <option value="tiktok">🎵 TikTok</option>
+              <option value="instagram">📸 Instagram</option>
+              <option value="youtube">📹 YouTube</option>
+            </select>
+            <small class="help-text">Wybierz platformę do wyszukiwania</small>
+          </div>
+
+          <div class="form-group">
+            <label for="resultsCount" class="label required">
+              Liczba wyników *
+            </label>
+            <input
+              type="number"
+              id="resultsCount"
+              name="resultsCount"
+              min="5"
+              max="100"
+              step="1"
+              value="10"
+              required
+              class="input"
+            />
+            <small class="help-text"
+              >Ile elementów pobrać z każdej platformy (5-100)</small
+            >
+          </div>
+
+          <div class="form-buttons">
+            <button type="submit" class="btn btn-primary" id="scrapeBtn">
+              <span class="btn-icon">🚀</span>
+              Zacznij scrapować
+            </button>
+
+            <button type="button" class="btn btn-secondary" id="resultsBtn">
+              <span class="btn-icon">📊</span>
+              Zobacz wyniki
+            </button>
+          </div>
+        </form>
+
+        <div id="status" class="status hidden">
+          <div class="status-content">
+            <div class="spinner"></div>
+            <h3>Scrapowanie w toku...</h3>
+            <p>
+              Pobieramy dane z wybranych platform. To może potrwać kilka minut.
+            </p>
+            <div class="progress-info">
+              <div class="progress-bar">
+                <div class="progress-fill"></div>
+              </div>
+              <span class="progress-text">Analizujemy hashtagi...</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="results" class="results hidden">
+          <h3>✅ Scrapowanie zakończone!</h3>
+          <div class="results-summary">
+            <div class="result-stat">
+              <span class="stat-number" id="totalItems">0</span>
+              <span class="stat-label">Pobranych elementów</span>
+            </div>
+            <div class="result-stat">
+              <span class="stat-number" id="successfulPlatforms">0</span>
+              <span class="stat-label">Platformy</span>
+            </div>
+          </div>
+          <div class="results-actions">
+            <button class="btn btn-secondary" id="viewResultsBtn">
+              <span class="btn-icon">📊</span>
+              Zobacz wyniki w Airtable
+            </button>
+            <button class="btn btn-outline" id="newSearchBtn">
+              🔄 Nowe wyszukiwanie
+            </button>
+          </div>
+        </div>
+      </main>
+
+      <footer class="footer">
+        <p>
+          © 2025 Multi-Platform Hashtag Scraper | Powered by Apify & Airtable
+        </p>
+      </footer>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
