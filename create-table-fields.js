@@ -32,6 +32,7 @@ async function createTableViaRestApi(
 
     // Zdefiniuj standardowy zestaw pól, który zawsze będzie używany dla nowych tabel
     const standardFields = [
+      "platform", // Nowe pole do rozróżniania platform
       "author",
       "viewsCount",
       "otherHashtags",
@@ -62,6 +63,15 @@ async function createTableViaRestApi(
           dateFormat: {
             name: "iso",
           },
+        };
+      } else if (fieldName === "platform") {
+        fieldDef.type = "singleSelect";
+        fieldDef.options = {
+          choices: [
+            { name: "tiktok", color: "blueLight2" },
+            { name: "instagram", color: "pinkLight2" },
+            { name: "youtube", color: "redLight2" },
+          ],
         };
       }
 
@@ -124,6 +134,7 @@ async function createTableViaRestApi(
 async function createTable(tableName, sourceTable = "AutomatyzacjaBiznesu") {
   try {
     const standardFields = [
+      "platform", // Nowe pole do rozróżniania platform
       "author",
       "viewsCount",
       "otherHashtags",
@@ -169,6 +180,7 @@ async function createTable(tableName, sourceTable = "AutomatyzacjaBiznesu") {
 
         // Sugerowane typy pól
         const fieldTypes = {
+          platform: "Lista wyboru (tiktok, instagram, youtube)",
           author: "Tekst jednowierszowy",
           viewsCount: "Liczba",
           otherHashtags: "Tekst jednowierszowy",
@@ -390,6 +402,101 @@ async function addSubtitlesFieldToTable(tableName) {
   }
 }
 
+// Funkcja do dodawania pola platform do istniejącej tabeli
+async function addPlatformFieldToTable(tableName) {
+  try {
+    console.log(`Sprawdzanie pola platform w tabeli ${tableName}...`);
+
+    // Sprawdź czy tabela ma już pole platform
+    const existingFields = await getTableFields(tableName);
+
+    if (existingFields.includes("platform")) {
+      console.log(`Tabela ${tableName} już ma pole platform.`);
+      return true;
+    }
+
+    console.log(`Tabela ${tableName} nie ma pola platform.`);
+
+    // Wyświetl instrukcje ręcznego dodania pola platform
+    console.log(
+      `INSTRUKCJA: Ręcznie dodaj pole "platform" (typ: Lista wyboru) do tabeli ${tableName} w Airtable:`
+    );
+    console.log(`1. Otwórz tabelę ${tableName} w Airtable`);
+    console.log(
+      `2. Kliknij ikonę "+" w górnej części tabeli aby dodać nową kolumnę`
+    );
+    console.log(`3. Nazwij pole "platform"`);
+    console.log(`4. Wybierz typ pola "Lista wyboru"`);
+    console.log(`5. Dodaj opcje: tiktok, instagram, youtube`);
+    console.log(`6. Zapisz zmiany`);
+
+    // Spróbuj dodać pole za pomocą REST API używając ID tabeli zamiast nazwy
+    try {
+      console.log(
+        `Próbuję automatycznie dodać pole platform do tabeli ${tableName}...`
+      );
+
+      // Pobierz ID tabeli na podstawie nazwy
+      const tableIdMapping = await getTableIdMapping();
+      const tableId = tableIdMapping[tableName];
+
+      if (!tableId) {
+        console.log(`⚠️  Nie można znaleźć ID dla tabeli ${tableName}`);
+        return false;
+      }
+
+      console.log(`   Używam ID tabeli: ${tableId}`);
+
+      const response = await axios({
+        method: "post",
+        url: `https://api.airtable.com/v0/meta/bases/${AIRTABLE_BASE_ID}/tables/${tableId}/fields`,
+        headers: {
+          Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        data: {
+          name: "platform",
+          type: "singleSelect",
+          options: {
+            choices: [
+              { name: "tiktok", color: "blueLight2" },
+              { name: "instagram", color: "pinkLight2" },
+              { name: "youtube", color: "redLight2" },
+            ],
+          },
+        },
+      });
+
+      if (response.status === 200 || response.status === 201) {
+        console.log(
+          `✅ Pole platform zostało pomyślnie dodane automatycznie do tabeli ${tableName}!`
+        );
+        return true;
+      }
+    } catch (apiError) {
+      console.log(
+        `⚠️  Automatyczne dodanie pola platform nie powiodło się. Prawdopodobnie wymagana jest autoryzacja Personal Access Token lub ręczne dodanie pola.`
+      );
+      console.log(
+        `   Szczegóły błędu: ${apiError.response ? apiError.response.data.error.type || apiError.response.data.error : apiError.message}`
+      );
+    }
+
+    console.log(`\n🔧 Aby automatycznie dodawać pola, możesz:`);
+
+    return false;
+  } catch (error) {
+    console.error(
+      `Błąd podczas sprawdzania pola platform w tabeli ${tableName}:`,
+      error.message
+    );
+    console.log(
+      `INSTRUKCJA: Ręcznie dodaj pole "platform" (typ: Lista wyboru) do tabeli ${tableName} w Airtable.`
+    );
+    return false;
+  }
+}
+
 // Funkcja do sprawdzenia i aktualizacji wszystkich istniejących tabel
 async function checkAndUpdateExistingTables() {
   try {
@@ -420,6 +527,7 @@ async function checkAndUpdateExistingTables() {
     for (const tableName of uniqueTables) {
       try {
         await addSubtitlesFieldToTable(tableName);
+        await addPlatformFieldToTable(tableName);
       } catch (error) {
         console.log(
           `Pomijam tabelę ${tableName} - prawdopodobnie nie istnieje.`
@@ -468,8 +576,9 @@ async function main() {
         console.log(
           `Tabela ${serie.tableName} istnieje i jest gotowa do użycia.`
         );
-        // Sprawdź czy tabela ma pole subtitles
+        // Sprawdź czy tabela ma pole subtitles i platform
         await addSubtitlesFieldToTable(serie.tableName);
+        await addPlatformFieldToTable(serie.tableName);
       } else {
         console.log(
           `Tabela ${serie.tableName} nie istnieje. Postępuj zgodnie z instrukcjami utworzenia.`
@@ -495,6 +604,7 @@ module.exports = {
   getAllSeries,
   createTableViaRestApi,
   addSubtitlesFieldToTable,
+  addPlatformFieldToTable,
   checkAndUpdateExistingTables,
   getTableIdMapping,
   invalidateTableIdCache,
