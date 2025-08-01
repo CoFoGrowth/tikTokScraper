@@ -31,9 +31,10 @@ async function createTableViaRestApi(
     const formattedTableName = formatTableName(tableName);
 
     // Zdefiniuj standardowy zestaw pól, który zawsze będzie używany dla nowych tabel
+    // UWAGA: Pierwsze pole musi być typu tekstowego (primary field w Airtable)
     const standardFields = [
+      "author", // Pierwsze pole - musi być typu tekstowego
       "platform", // Nowe pole do rozróżniania platform
-      "author",
       "viewsCount",
       "otherHashtags",
       "description",
@@ -133,9 +134,10 @@ async function createTableViaRestApi(
 // Funkcja do tworzenia tabeli (wykorzystuje REST API Airtable)
 async function createTable(tableName, sourceTable = "AutomatyzacjaBiznesu") {
   try {
+    // UWAGA: Pierwsze pole musi być typu tekstowego (primary field w Airtable)
     const standardFields = [
+      "author", // Pierwsze pole - musi być typu tekstowego
       "platform", // Nowe pole do rozróżniania platform
-      "author",
       "viewsCount",
       "otherHashtags",
       "description",

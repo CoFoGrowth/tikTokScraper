@@ -28,6 +28,7 @@ let progressInterval;
 
 // Form validation
 function validateForm() {
+  const seriesName = document.getElementById("seriesName").value.trim();
   const mainHashtag = document.getElementById("mainHashtag").value.trim();
   const platform = document.getElementById("platform").value;
   const resultsCount = document.getElementById("resultsCount").value;
@@ -38,6 +39,14 @@ function validateForm() {
   document.querySelectorAll(".input, .select").forEach((el) => {
     el.classList.remove("error", "success");
   });
+
+  // Validate series name
+  if (!seriesName) {
+    document.getElementById("seriesName").classList.add("error");
+    isValid = false;
+  } else {
+    document.getElementById("seriesName").classList.add("success");
+  }
 
   // Validate main hashtag
   if (!mainHashtag) {
@@ -90,8 +99,8 @@ function showResults(data) {
   resultsSection.classList.remove("hidden");
 
   // Update stats
-  const totalItems = data.results?.totalItems || 0;
-  const successfulPlatforms = data.results?.successful || 0;
+  const totalItems = data.data?.totalItems || 0;
+  const successfulPlatforms = data.data?.successful || 0;
 
   document.getElementById("totalItems").textContent = totalItems;
   document.getElementById("successfulPlatforms").textContent =
@@ -148,6 +157,7 @@ async function handleSubmit(e) {
 
   // Get form data
   const formData = {
+    seriesName: document.getElementById("seriesName").value.trim(),
     mainHashtag: document.getElementById("mainHashtag").value.trim(),
     firstHashtag: document.getElementById("firstHashtag").value.trim(),
     secondHashtag: document.getElementById("secondHashtag").value.trim(),
@@ -201,6 +211,15 @@ newSearchBtn.addEventListener("click", () => {
 });
 
 // Real-time validation
+document.getElementById("seriesName").addEventListener("input", function () {
+  if (this.value.trim()) {
+    this.classList.remove("error");
+    this.classList.add("success");
+  } else {
+    this.classList.remove("success");
+  }
+});
+
 document.getElementById("mainHashtag").addEventListener("input", function () {
   if (this.value.trim()) {
     this.classList.remove("error");

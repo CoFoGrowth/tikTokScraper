@@ -15,10 +15,33 @@
       <header class="header">
         <h1>🎯 Multi-Platform Hashtag Scraper</h1>
         <p>Zbieraj dane z TikTok, Instagram i YouTube w jednym miejscu</p>
+        <div class="powered-by">
+          Powered by
+          <a href="https://cofo.pl/" target="_blank" class="cofo-link"
+            >Cofo.pl</a
+          >
+        </div>
       </header>
 
       <main class="main">
         <form id="scraperForm" class="form">
+          <div class="form-group">
+            <label for="seriesName" class="label required">
+              Nazwa serii *
+            </label>
+            <input
+              type="text"
+              id="seriesName"
+              name="seriesName"
+              placeholder="np. Analiza AI w biznesie"
+              required
+              class="input"
+            />
+            <small class="help-text"
+              >Unikalna nazwa dla Twojej serii danych</small
+            >
+          </div>
+
           <div class="form-group">
             <label for="mainHashtag" class="label required">
               Główny hashtag *

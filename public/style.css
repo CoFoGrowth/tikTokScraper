@@ -68,6 +68,24 @@ body {
   font-weight: 300;
 }
 
+.powered-by {
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  opacity: 0.8;
+}
+
+.cofo-link {
+  color: white;
+  text-decoration: underline;
+  font-weight: 500;
+  transition: opacity 0.2s ease;
+}
+
+.cofo-link:hover {
+  opacity: 1;
+  text-decoration: none;
+}
+
 /* Main content */
 .main {
   flex: 1;

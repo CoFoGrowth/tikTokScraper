@@ -30,14 +30,21 @@ app.get("/ping", (req, res) => {
 // API endpoint dla niestandardowego scrapingu z frontendu
 app.post("/api/scrape-custom", async (req, res) => {
   try {
-    const { mainHashtag, firstHashtag, secondHashtag, platform, resultsCount } =
-      req.body;
+    const {
+      seriesName,
+      mainHashtag,
+      firstHashtag,
+      secondHashtag,
+      platform,
+      resultsCount,
+    } = req.body;
 
     // Walidacja danych wejściowych
-    if (!mainHashtag || !platform || !resultsCount) {
+    if (!seriesName || !mainHashtag || !platform || !resultsCount) {
       return res.status(400).json({
         success: false,
-        message: "Wymagane pola: mainHashtag, platform, resultsCount",
+        message:
+          "Wymagane pola: seriesName, mainHashtag, platform, resultsCount",
       });
     }
 
@@ -49,6 +56,7 @@ app.post("/api/scrape-custom", async (req, res) => {
     }
 
     console.log(`🚀 Uruchamianie niestandardowego scrapingu:`);
+    console.log(`   Nazwa serii: ${seriesName}`);
     console.log(`   Główny hashtag: #${mainHashtag}`);
     console.log(
       `   Dodatkowe hashtagi: ${
@@ -70,28 +78,33 @@ app.post("/api/scrape-custom", async (req, res) => {
       mainHashtag: mainHashtag,
       additionalHashtags: [firstHashtag, secondHashtag].filter(Boolean),
       resultsPerPage: resultsCount,
-      seriesName: `custom_${Date.now()}`, // Unikalna nazwa dla tymczasowej serii
+      seriesName: seriesName, // Użyj nazwy serii podanej przez użytkownika
       platforms:
         platform === "all" ? ["tiktok", "instagram", "youtube"] : [platform],
     };
 
-    let result;
+    // Użyj właściwej metody dla niestandardowych hashtagów
+    const result =
+      await platformManager.runScrapingForAllPlatformsWithConfig(customConfig);
 
-    if (platform === "all") {
-      // Uruchom dla wszystkich platform
-      result =
-        await platformManager.runScrapingForAllPlatformsWithConfig(
-          customConfig
-        );
-    } else {
-      // Uruchom dla pojedynczej platformy
-      result = await platformManager.runScrapingForPlatform(
-        platform,
-        customConfig
-      );
-    }
+    console.log("📊 Wynik niestandardowego scrapingu:", result);
 
-    res.json(result);
+    // Formatuj odpowiedź dla frontendu
+    res.json({
+      success: result.success,
+      message: result.message || "Scraping zakończony",
+      data: {
+        totalItems: result.results?.totalItems || 0,
+        successful: result.results?.successful || 0,
+        failed: result.results?.failed || 0,
+        platform: platform,
+        series: seriesName,
+        hashtags: {
+          main: mainHashtag,
+          additional: [firstHashtag, secondHashtag].filter(Boolean),
+        },
+      },
+    });
   } catch (error) {
     console.error("Błąd podczas niestandardowego scrapingu:", error);
     res.status(500).json({
@@ -161,12 +174,14 @@ app.post("/run-youtube", async (req, res) => {
   }
 });
 
+// Automatyczne uruchamianie wyłączone na żądanie użytkownika
 // Konfiguracja harmonogramu - uruchamianie codziennie o 10:00 rano czasu europejskiego (CET/CEST)
 // Format cron: sekunda minuta godzina dzień_miesiąca miesiąc dzień_tygodnia
 // W przypadku render.com, który używa UTC, potrzebujemy dostosować godzinę
 // CET (zima) = UTC+1, więc 9:00 UTC
 // CEST (lato) = UTC+2, więc 8:00 UTC
 // Dla uproszczenia ustawiamy na 8:00 UTC, co będzie odpowiadać 9:00 lub 10:00 w zależności od czasu letniego/zimowego
+/*
 cron.schedule(
   "0 0 8 * * *",
   async () => {
@@ -185,6 +200,7 @@ cron.schedule(
     timezone: "UTC",
   }
 );
+*/
 
 // Uruchomienie serwera
 app.listen(PORT, () => {
@@ -193,9 +209,7 @@ app.listen(PORT, () => {
   );
   console.log("📱 Obsługiwane platformy: TikTok, Instagram, YouTube");
   console.log("🌐 Frontend dostępny na: http://localhost:" + PORT);
-  console.log(
-    "⏰ Scraper zostanie uruchomiony codziennie o 10:00 czasu europejskiego"
-  );
+  console.log("⏰ Automatyczne uruchamianie: WYŁĄCZONE");
   console.log("\n🔗 Dostępne endpointy:");
   console.log("   GET  /                 - Frontend (landing page)");
   console.log("   POST /api/scrape-custom - Niestandardowy scraping");
