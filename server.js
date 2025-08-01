@@ -37,6 +37,7 @@ app.post("/api/scrape-custom", async (req, res) => {
       secondHashtag,
       platform,
       resultsCount,
+      viewsFilters,
     } = req.body;
 
     // Walidacja danych wejściowych
@@ -68,6 +69,14 @@ app.post("/api/scrape-custom", async (req, res) => {
     );
     console.log(`   Platforma: ${platform}`);
     console.log(`   Liczba wyników: ${resultsCount}`);
+    console.log(
+      `   Filtry wyświetleń: ${
+        viewsFilters && viewsFilters.length > 0
+          ? viewsFilters.map((f) => f.toLocaleString()).join(", ") +
+            " wyświetleń"
+          : "brak filtrów"
+      }`
+    );
 
     // Import platform-manager do niestandardowego scrapingu
     const PlatformManager = require("./platform-manager");
@@ -81,6 +90,7 @@ app.post("/api/scrape-custom", async (req, res) => {
       seriesName: seriesName, // Użyj nazwy serii podanej przez użytkownika
       platforms:
         platform === "all" ? ["tiktok", "instagram", "youtube"] : [platform],
+      viewsFilters: viewsFilters || [], // Filtry wyświetleń
     };
 
     // Użyj właściwej metody dla niestandardowych hashtagów

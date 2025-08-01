@@ -43,6 +43,42 @@ class PlatformManager {
     }
   }
 
+  // Funkcja do filtrowania wyników według liczby wyświetleń
+  applyViewsFilters(items, viewsFilters) {
+    if (!viewsFilters || viewsFilters.length === 0) {
+      return items; // Brak filtrów - zwróć wszystkie elementy
+    }
+
+    // Znajdź najwyższy próg z zaznaczonych filtrów
+    const minViews = Math.max(...viewsFilters);
+
+    console.log(
+      `🔍 Filtruję wyniki: minimum ${minViews.toLocaleString()} wyświetleń`
+    );
+
+    const filteredItems = items.filter((item) => {
+      // Ekstraktuj liczbę wyświetleń z formatDataForStorage każdego scrapera
+      let viewCount = 0;
+
+      if (item.fields && item.fields.viewsCount) {
+        // Jeśli to już sformatowane dane dla Airtable
+        viewCount = item.fields.viewsCount;
+      } else {
+        // Jeśli to raw dane ze scrapera - sprawdź różne pola w zależności od platformy
+        viewCount =
+          item.playCount ||
+          item.likesCount ||
+          item.viewCount ||
+          item.viewsCount ||
+          0;
+      }
+
+      return viewCount >= minViews;
+    });
+
+    return filteredItems;
+  }
+
   // Funkcja do zapisywania danych w Airtable z obsługą platform
   async saveToAirtable(items, platform) {
     // Grupujemy dane według serii
@@ -266,8 +302,24 @@ class PlatformManager {
 
       console.log(`Pobrano ${scrapedItems.length} elementów z ${platform}`);
 
+      // Zastosuj filtry wyświetleń jeśli są ustawione
+      const filteredItems = this.applyViewsFilters(
+        scrapedItems,
+        config.viewsFilters
+      );
+
+      if (
+        config.viewsFilters &&
+        config.viewsFilters.length > 0 &&
+        filteredItems.length !== scrapedItems.length
+      ) {
+        console.log(
+          `📊 Po zastosowaniu filtrów wyświetleń: ${filteredItems.length} elementów (usunięto ${scrapedItems.length - filteredItems.length})`
+        );
+      }
+
       // Zapisz dane do Airtable
-      await this.saveToAirtable(scrapedItems, platform);
+      await this.saveToAirtable(filteredItems, platform);
 
       // Wyczyść tymczasowe pliki (tylko dla TikTok, który ma napisy)
       if (platform === "tiktok") {
@@ -282,7 +334,7 @@ class PlatformManager {
         `\nZakończono pobieranie i zapisywanie danych z ${platform} dla serii "${config.seriesName}"`
       );
 
-      return { success: true, itemsCount: scrapedItems.length, platform };
+      return { success: true, itemsCount: filteredItems.length, platform };
     } catch (error) {
       console.error(`Błąd podczas scrapingu ${platform}:`, error);
       return { success: false, error: error.message, platform };

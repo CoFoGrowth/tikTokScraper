@@ -163,6 +163,12 @@ async function handleSubmit(e) {
     secondHashtag: document.getElementById("secondHashtag").value.trim(),
     platform: document.getElementById("platform").value,
     resultsCount: parseInt(document.getElementById("resultsCount").value),
+    // Get selected views filters
+    viewsFilters: Array.from(
+      document.querySelectorAll('input[name="viewsFilter"]:checked')
+    )
+      .map((checkbox) => parseInt(checkbox.value))
+      .sort((a, b) => b - a), // Sort descending (highest first)
   };
 
   // Update button state
